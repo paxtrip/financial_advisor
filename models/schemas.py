@@ -44,3 +44,13 @@ class ReportRequest(BaseModel):
     date_to: Optional[str] = None
     category_filter: Optional[str] = None
     report_type: str = "summary"
+
+
+class EditRequest(BaseModel):
+    intent: str = "edit"
+    action: str  # "delete", "update"
+    target: str = "last"  # "last", "last_n"
+    field: Optional[str] = None  # что менять: "amount", "category", "description"
+    new_value: Optional[str] = None  # новое значение
+    amount_filter: Optional[float] = None  # фильтр по сумме
+    clarification_needed: Optional[str] = None

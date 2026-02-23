@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from services.llm import generate_report
-from services.supabase_client import get_transactions
+from services.supabase_client import get_transactions, get_category_breakdown
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -31,9 +31,15 @@ async def cmd_report(message: Message):
         await message.answer("За этот месяц записей нет. Начни записывать расходы!")
         return
 
+    breakdown = get_category_breakdown(user.id, date_from, date_to)
+
     # Формируем отчёт через LLM
     try:
-        transactions_json = json.dumps(transactions, ensure_ascii=False, default=str)
+        report_data = {
+            "transactions": transactions,
+            "category_breakdown": breakdown,
+        }
+        transactions_json = json.dumps(report_data, ensure_ascii=False, default=str)
         report_text = await generate_report(transactions_json)
         await message.answer(report_text, parse_mode="HTML")
     except Exception as e:

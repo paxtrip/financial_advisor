@@ -106,6 +106,17 @@ async def handle_photo(message: Message):
             "items": [item.model_dump() for item in parsed.items],
         }
 
+        # Категоризируем позиции через LLM (для Vision-пути)
+        if receipt_data.get("items"):
+            try:
+                categorized = await categorize_items(receipt_data["items"])
+                if isinstance(categorized, list):
+                    for i, cat_item in enumerate(categorized):
+                        if i < len(receipt_data["items"]):
+                            receipt_data["items"][i]["category"] = cat_item.get("category")
+            except Exception as e:
+                logger.warning(f"Ошибка категоризации (vision): {e}")
+
     # 3. Определяем основную категорию по самой частой среди позиций
     items = receipt_data.get("items", [])
     item_categories = [item.get("category") for item in items if item.get("category")]

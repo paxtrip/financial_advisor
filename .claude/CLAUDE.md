@@ -40,7 +40,7 @@ fin_assist/
 │   ├── message.py              # Текст → LLM парсинг → сохранение в БД
 │   ├── photo.py                # Фото → QR → proverkacheka / Vision LLM → сохранение
 │   ├── reports.py              # /report — отчёты за период
-│   └── edit.py                 # Редактирование/удаление (заглушка)
+│   └── edit.py                 # Редактирование/удаление транзакций (inline-кнопки)
 ├── services/
 │   ├── llm.py                  # OpenRouter API (парсинг текста, фото, категоризация, отчёты)
 │   ├── receipt_qr.py           # proverkacheka.com API (чек по QR)
@@ -78,11 +78,12 @@ fin_assist/
 1. **Текст** → `handlers/message.py` → `services/llm.py` (парсинг) → `models/schemas.py` (валидация) → `services/supabase_client.py` (сохранение)
 2. **Фото** → `handlers/photo.py` → `utils/qr_decoder.py` (ищем QR) → если QR найден: `services/receipt_qr.py` (proverkacheka) → если нет: `services/receipt_photo.py` (Vision LLM) → сохранение
 3. **Отчёт** → `handlers/reports.py` → запрос к БД → `services/llm.py` (форматирование)
+4. **Редактирование** → `handlers/message.py` (intent="edit") → `handlers/edit.py` (inline-кнопки) → callback → `services/supabase_client.py` (удаление/обновление)
 
 ## Что ещё нужно сделать (TODO)
 
-- [ ] Проверка дублей QR перед сохранением (поле `qr_raw` добавлено в БД)
-- [ ] Полноценное редактирование/удаление записей (`handlers/edit.py` — сейчас заглушка)
+- [x] Проверка дублей QR перед сохранением (поле `qr_raw` добавлено в БД)
+- [x] Полноценное редактирование/удаление записей (`handlers/edit.py`)
 - [ ] Определить какие поля API proverkacheka содержат адрес (логирование добавлено)
 - [ ] Пользовательские псевдонимы магазинов через диалог
 - [ ] Бюджеты и лимиты по категориям

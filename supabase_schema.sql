@@ -75,22 +75,61 @@ CREATE TABLE transaction_items (
 );
 
 -- ============================================
--- Начальные данные: базовые категории расходов
+-- Начальные данные: иерархические категории расходов
 -- ============================================
+
+-- Родительские категории (parent_id = NULL)
 INSERT INTO categories (name, is_income) VALUES
-    ('Продукты', FALSE),
+    ('Продукты питания', FALSE),
     ('Транспорт', FALSE),
     ('Жильё', FALSE),
     ('Развлечения', FALSE),
-    ('Одежда', FALSE),
-    ('Здоровье', FALSE),
-    ('Кафе', FALSE),
+    ('Одежда и обувь', FALSE),
+    ('Здоровье и красота', FALSE),
+    ('Кафе и рестораны', FALSE),
     ('Подписки', FALSE),
     ('Связь', FALSE),
     ('Образование', FALSE),
-    ('Бытовая химия', FALSE),
-    ('Товары для дома', FALSE),
+    ('Бытовая химия и дом', FALSE),
+    ('Подарки', FALSE),
     ('Другое', FALSE);
+
+-- Подкатегории «Продукты питания»
+INSERT INTO categories (name, parent_id, is_income) VALUES
+    ('Мясо и рыба',            (SELECT id FROM categories WHERE name='Продукты питания'    AND user_id IS NULL), FALSE),
+    ('Молочное',               (SELECT id FROM categories WHERE name='Продукты питания'    AND user_id IS NULL), FALSE),
+    ('Овощи и фрукты',         (SELECT id FROM categories WHERE name='Продукты питания'    AND user_id IS NULL), FALSE),
+    ('Хлеб и выпечка',         (SELECT id FROM categories WHERE name='Продукты питания'    AND user_id IS NULL), FALSE),
+    ('Напитки',                (SELECT id FROM categories WHERE name='Продукты питания'    AND user_id IS NULL), FALSE),
+    ('Бакалея',                (SELECT id FROM categories WHERE name='Продукты питания'    AND user_id IS NULL), FALSE);
+
+-- Подкатегории «Бытовая химия и дом»
+INSERT INTO categories (name, parent_id, is_income) VALUES
+    ('Бытовая химия',          (SELECT id FROM categories WHERE name='Бытовая химия и дом' AND user_id IS NULL), FALSE),
+    ('Товары для дома',        (SELECT id FROM categories WHERE name='Бытовая химия и дом' AND user_id IS NULL), FALSE),
+    ('Зоотовары',              (SELECT id FROM categories WHERE name='Бытовая химия и дом' AND user_id IS NULL), FALSE);
+
+-- Подкатегории «Здоровье и красота»
+INSERT INTO categories (name, parent_id, is_income) VALUES
+    ('Аптека',                 (SELECT id FROM categories WHERE name='Здоровье и красота'  AND user_id IS NULL), FALSE),
+    ('Косметика и гигиена',    (SELECT id FROM categories WHERE name='Здоровье и красота'  AND user_id IS NULL), FALSE),
+    ('Спорт',                  (SELECT id FROM categories WHERE name='Здоровье и красота'  AND user_id IS NULL), FALSE);
+
+-- Подкатегории «Транспорт»
+INSERT INTO categories (name, parent_id, is_income) VALUES
+    ('Такси',                  (SELECT id FROM categories WHERE name='Транспорт'           AND user_id IS NULL), FALSE),
+    ('Бензин',                 (SELECT id FROM categories WHERE name='Транспорт'           AND user_id IS NULL), FALSE),
+    ('Общественный транспорт', (SELECT id FROM categories WHERE name='Транспорт'           AND user_id IS NULL), FALSE);
+
+-- Подкатегории «Кафе и рестораны»
+INSERT INTO categories (name, parent_id, is_income) VALUES
+    ('Рестораны',              (SELECT id FROM categories WHERE name='Кафе и рестораны'    AND user_id IS NULL), FALSE),
+    ('Кофе и фастфуд',         (SELECT id FROM categories WHERE name='Кафе и рестораны'    AND user_id IS NULL), FALSE);
+
+-- Подкатегории «Развлечения»
+INSERT INTO categories (name, parent_id, is_income) VALUES
+    ('Кино и театр',           (SELECT id FROM categories WHERE name='Развлечения'         AND user_id IS NULL), FALSE),
+    ('Хобби',                  (SELECT id FROM categories WHERE name='Развлечения'         AND user_id IS NULL), FALSE);
 
 -- Категории доходов
 INSERT INTO categories (name, is_income) VALUES

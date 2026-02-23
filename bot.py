@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 
 from config import settings
-from handlers import start, photo, reports, message
+from handlers import start, photo, reports, edit, message
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,6 +18,7 @@ dp = Dispatcher()
 dp.include_router(start.router)
 dp.include_router(reports.router)
 dp.include_router(photo.router)
+dp.include_router(edit.router)  # callback-обработчики для inline-кнопок редактирования
 dp.include_router(message.router)  # последний — ловит все текстовые сообщения
 
 

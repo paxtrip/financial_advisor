@@ -5,6 +5,7 @@ from aiogram.types import Message
 
 from services.llm import parse_user_message
 from services.supabase_client import get_or_create_user, save_transaction
+from handlers.edit import handle_edit
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ async def handle_text_message(message: Message):
     get_or_create_user(user.id, user.username, user.first_name)
 
     try:
-        parsed = await parse_user_message(message.text)
+        parsed, raw_data = await parse_user_message(message.text)
     except Exception as e:
         logger.error(f"Ошибка парсинга LLM: {e}")
         await message.answer("Произошла ошибка при обработке сообщения. Попробуй ещё раз.")
@@ -86,7 +87,7 @@ async def handle_text_message(message: Message):
         await message.answer("📊 Функция отчётов скоро будет доступна. Пока используй /report")
 
     elif parsed.intent == "edit":
-        await message.answer("✏️ Функция редактирования скоро будет доступна.")
+        await handle_edit(message, raw_data)
 
     elif parsed.intent == "question":
         await message.answer("Пока я умею только записывать расходы и доходы. Функция вопросов появится позже.")

@@ -75,6 +75,14 @@ def find_or_create_store(
     )
     if store_result.data:
         store = store_result.data[0]
+        # Если у найденного магазина уже есть адрес и он отличается от нового —
+        # это другая точка с тем же брендом, создаём отдельную запись
+        if address and store.get("address") and store["address"] != address:
+            store_data = {"user_id": user_id, "name": store_name, "address": address}
+            if chain:
+                store_data["chain"] = chain
+            new_store = supabase.table("stores").insert(store_data).execute()
+            return new_store.data[0]["id"]
         # Обновляем адрес/chain, если пришли новые данные
         updates = {}
         if address and not store.get("address"):
@@ -178,6 +186,58 @@ def get_transactions(user_id: int, date_from: str, date_to: str) -> list[dict]:
     return result.data
 
 
+def get_category_breakdown(user_id: int, date_from: str, date_to: str) -> list[dict]:
+    """Разбивка расходов по категориям за период.
+    Для транзакций с позициями — суммирует по категориям позиций.
+    Для транзакций без позиций — берёт категорию транзакции."""
+
+    # 1. Все расходные транзакции за период
+    txs = (
+        supabase.table("transactions")
+        .select("id, amount, category_id, categories(name)")
+        .eq("user_id", user_id)
+        .eq("type", "expense")
+        .gte("receipt_date", date_from)
+        .lte("receipt_date", date_to)
+        .execute()
+    ).data
+
+    if not txs:
+        return []
+
+    tx_ids = [tx["id"] for tx in txs]
+
+    # 2. Позиции этих транзакций
+    items = (
+        supabase.table("transaction_items")
+        .select("transaction_id, total, category_id, categories(name)")
+        .in_("transaction_id", tx_ids)
+        .execute()
+    ).data
+
+    tx_ids_with_items = {item["transaction_id"] for item in items}
+    totals: dict[str, float] = {}
+
+    # Суммируем по категориям позиций
+    for item in items:
+        cat = item.get("categories")
+        name = cat["name"] if cat else "Другое"
+        totals[name] = totals.get(name, 0) + float(item["total"])
+
+    # Транзакции без позиций — по категории транзакции
+    for tx in txs:
+        if tx["id"] not in tx_ids_with_items:
+            cat = tx.get("categories")
+            name = cat["name"] if cat else "Другое"
+            totals[name] = totals.get(name, 0) + float(tx["amount"])
+
+    return sorted(
+        [{"category": k, "total": round(v, 2)} for k, v in totals.items()],
+        key=lambda x: x["total"],
+        reverse=True,
+    )
+
+
 def get_last_transactions(user_id: int, limit: int = 5) -> list[dict]:
     """Получает последние N транзакций."""
     result = (
@@ -201,3 +261,20 @@ def delete_transaction(transaction_id: int, user_id: int) -> bool:
         .execute()
     )
     return len(result.data) > 0
+
+
+def update_transaction(transaction_id: int, user_id: int, updates: dict) -> dict | None:
+    """Обновляет поля транзакции (только свою). Возвращает обновлённую запись или None."""
+    allowed_fields = {"amount", "category_id", "description"}
+    filtered = {k: v for k, v in updates.items() if k in allowed_fields}
+    if not filtered:
+        return None
+
+    result = (
+        supabase.table("transactions")
+        .update(filtered)
+        .eq("id", transaction_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None

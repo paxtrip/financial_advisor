@@ -58,8 +58,10 @@ def _parse_json_response(raw: str) -> dict:
     return json.loads(text)
 
 
-async def parse_user_message(text: str) -> ParsedExpense:
-    """Парсит текстовое сообщение пользователя через LLM."""
+async def parse_user_message(text: str) -> tuple[ParsedExpense, dict]:
+    """Парсит текстовое сообщение пользователя через LLM.
+    Возвращает (ParsedExpense, raw_dict) — raw_dict нужен для edit-запросов,
+    т.к. ParsedExpense не содержит полей action/field/new_value."""
     current_date = date.today().isoformat()
     prompt = PARSE_MESSAGE_PROMPT.format(current_date=current_date)
 
@@ -70,7 +72,7 @@ async def parse_user_message(text: str) -> ParsedExpense:
 
     raw = await call_llm(messages, response_format={"type": "json_object"})
     data = _parse_json_response(raw)
-    return ParsedExpense.model_validate(data)
+    return ParsedExpense.model_validate(data), data
 
 
 async def parse_receipt_photo(base64_image: str) -> ParsedReceipt:
@@ -109,11 +111,11 @@ async def categorize_items(items: list[dict]) -> list[dict]:
         {"role": "user", "content": items_text},
     ]
 
-    raw = await call_llm(messages, response_format={"type": "json_object"})
+    # Не используем json_object — LLM обязан вернуть массив, а json_object
+    # заставляет его оборачивать массив в {"items": [...]}.
+    raw = await call_llm(messages)
     result = _parse_json_response(raw)
 
-    # LLM с response_format=json_object может обернуть массив в объект,
-    # например {"items": [...]} вместо [...]. Извлекаем массив.
     if isinstance(result, list):
         return result
     if isinstance(result, dict):
