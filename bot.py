@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
-from handlers import start, photo, reports, edit, message
+from handlers import start, photo, reports, edit, message, store_tags
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,8 +19,9 @@ dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(start.router)
 dp.include_router(reports.router)
 dp.include_router(photo.router)
-dp.include_router(edit.router)  # callback-обработчики для inline-кнопок редактирования
-dp.include_router(message.router)  # последний — ловит все текстовые сообщения
+dp.include_router(store_tags.router)  # /store_tag, /my_stores
+dp.include_router(edit.router)        # callback-обработчики для inline-кнопок редактирования
+dp.include_router(message.router)     # последний — ловит все текстовые сообщения
 
 
 async def main():

@@ -471,3 +471,75 @@ def get_category_breakdown_by_tag(
         key=lambda x: x["total"],
         reverse=True,
     )
+
+
+def get_user_stores(user_id: int) -> list[dict]:
+    """Возвращает все магазины пользователя с их тегами."""
+    stores = (
+        supabase.table("stores")
+        .select("id, name, address")
+        .eq("user_id", user_id)
+        .order("name")
+        .execute()
+    ).data
+
+    if not stores:
+        return []
+
+    store_ids = [s["id"] for s in stores]
+    links = (
+        supabase.table("store_tags")
+        .select("store_id, tags(name)")
+        .in_("store_id", store_ids)
+        .execute()
+    ).data
+
+    tags_by_store: dict[int, list[str]] = {}
+    for link in links:
+        sid = link["store_id"]
+        tag_name = link.get("tags", {}).get("name")
+        if tag_name:
+            tags_by_store.setdefault(sid, []).append(tag_name)
+
+    for store in stores:
+        store["tags"] = tags_by_store.get(store["id"], [])
+
+    return stores
+
+
+def get_store_by_name(user_id: int, name: str) -> dict | None:
+    """Ищет магазин пользователя по точному имени (без учёта регистра)."""
+    result = (
+        supabase.table("stores")
+        .select("id, name, address")
+        .eq("user_id", user_id)
+        .ilike("name", name)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def remove_store_tag(store_id: int, user_id: int, tag_name: str) -> bool:
+    """Удаляет тег с магазина. Возвращает True если тег был удалён."""
+    normalized = tag_name.lstrip("#").lower().strip()
+    tag_result = (
+        supabase.table("tags")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("name", normalized)
+        .limit(1)
+        .execute()
+    )
+    if not tag_result.data:
+        return False
+    tag_id = tag_result.data[0]["id"]
+
+    result = (
+        supabase.table("store_tags")
+        .delete()
+        .eq("store_id", store_id)
+        .eq("tag_id", tag_id)
+        .execute()
+    )
+    return len(result.data) > 0
