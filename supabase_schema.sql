@@ -137,3 +137,39 @@ INSERT INTO categories (name, is_income) VALUES
     ('Подработка', TRUE),
     ('Переводы', TRUE),
     ('Другой доход', TRUE);
+
+-- ============================================
+-- Система хештегов
+-- ============================================
+
+-- 7. Справочник тегов
+CREATE TABLE tags (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) NOT NULL,
+    name TEXT NOT NULL,                            -- без #, нижний регистр
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, name)
+);
+
+CREATE INDEX idx_tags_user ON tags(user_id);
+
+-- 8. Теги транзакции
+CREATE TABLE transaction_tags (
+    transaction_id INT REFERENCES transactions(id) ON DELETE CASCADE,
+    tag_id INT REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (transaction_id, tag_id)
+);
+
+-- 9. Теги позиции чека
+CREATE TABLE transaction_item_tags (
+    transaction_item_id INT REFERENCES transaction_items(id) ON DELETE CASCADE,
+    tag_id INT REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (transaction_item_id, tag_id)
+);
+
+-- 10. Постоянные теги магазина (наследуются новыми транзакциями)
+CREATE TABLE store_tags (
+    store_id INT REFERENCES stores(id) ON DELETE CASCADE,
+    tag_id INT REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (store_id, tag_id)
+);

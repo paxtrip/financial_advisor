@@ -1,6 +1,8 @@
 import logging
 
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from models.schemas import EditRequest
@@ -9,10 +11,16 @@ from services.supabase_client import (
     delete_transaction,
     update_transaction,
     find_category_by_name,
+    add_tags_to_transaction,
 )
+from utils.tag_parser import normalize_tags
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+class TagStates(StatesGroup):
+    waiting_for_tags = State()
 
 
 def _format_transaction(tx: dict) -> str:
@@ -196,7 +204,51 @@ async def callback_update(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "edit_cancel")
-async def callback_cancel(callback: CallbackQuery):
+async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     """Отмена операции."""
+    await state.clear()
     await callback.message.edit_text("↩️ Операция отменена.")
     await callback.answer()
+
+
+# --- Теги ---
+
+@router.callback_query(F.data.startswith("tag_add:"))
+async def callback_tag_add(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает теги для транзакции."""
+    tx_id = int(callback.data.split(":")[1])
+    await state.set_state(TagStates.waiting_for_tags)
+    await state.update_data(tag_tx_id=tx_id)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        "🏷 Напиши теги через пробел или запятую.\n"
+        "Можно с # или без: <code>дача работа праздник</code>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(TagStates.waiting_for_tags, F.text)
+async def handle_tag_input(message: Message, state: FSMContext):
+    """Сохраняет введённые теги к транзакции."""
+    data = await state.get_data()
+    tx_id = data.get("tag_tx_id")
+    user_id = message.from_user.id
+
+    # Парсим ввод: разбиваем по пробелам и запятым
+    raw_tags = [t.strip() for t in message.text.replace(",", " ").split()]
+    tags = normalize_tags(raw_tags)
+
+    if not tags:
+        await state.clear()
+        await message.answer("Не распознал теги. Попробуй ещё раз.")
+        return
+
+    saved = add_tags_to_transaction(tx_id, user_id, tags)
+    await state.clear()
+
+    if saved:
+        tags_text = " ".join(f"#{t}" for t in saved)
+        await message.answer(f"✅ Теги добавлены: {tags_text}")
+    else:
+        await message.answer("Эти теги уже были добавлены к записи.")

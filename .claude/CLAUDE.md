@@ -54,7 +54,8 @@ fin_assist/
 ├── prompts/
 │   └── system_prompts.py       # System prompts для LLM
 ├── utils/
-│   └── qr_decoder.py           # Декодирование QR из изображения (pyzbar)
+│   ├── qr_decoder.py           # Декодирование QR из изображения (pyzbar)
+│   └── tag_parser.py           # Извлечение #тегов из текста, нормализация, мерж
 ├── docs/
 │   ├── project.md              # Полное ТЗ — перечень функциональных возможностей
 │   ├── documentation_api.md    # Документация API proverkacheka.com
@@ -67,7 +68,7 @@ fin_assist/
 
 ## Схема БД (Supabase)
 
-6 таблиц: `users`, `categories`, `stores`, `store_aliases`, `transactions`, `transaction_items`
+10 таблиц: `users`, `categories`, `stores`, `store_aliases`, `transactions`, `transaction_items`, `tags`, `transaction_tags`, `transaction_item_tags`, `store_tags`
 
 Ключевые моменты:
 - `transactions.qr_raw` — строка QR-кода, уникальный индекс для защиты от дублей
@@ -77,13 +78,16 @@ fin_assist/
 - `stores` — `retailPlace` из чека (торговая марка), `chain` = юрлицо (`user`), `address` = фактический адрес
 - Два магазина с одинаковым именем но разными адресами — разные записи в `stores`
 - Суммы в API proverkacheka приходят **в копейках**, делим на 100
+- `tags` — справочник тегов пользователя (нижний регистр, без #, уникальны по user_id+name)
+- `store_tags` — постоянные теги магазина, автоматически наследуются новыми транзакциями
 
 ## Поток обработки
 
-1. **Текст** → `handlers/message.py` → `services/llm.py` (парсинг) → `models/schemas.py` (валидация) → `services/supabase_client.py` (сохранение)
-2. **Фото** → `handlers/photo.py` → `utils/qr_decoder.py` (ищем QR) → если QR найден: `services/receipt_qr.py` (proverkacheka) + `categorize_items` → если нет: `services/receipt_photo.py` (Vision LLM) + `categorize_items` → сохранение
-3. **Отчёт** → `handlers/reports.py` → `get_transactions` + `get_category_breakdown` → `services/llm.py` (форматирование)
+1. **Текст** → `handlers/message.py` → `utils/tag_parser.py` (извлечь #теги) → `services/llm.py` (парсинг + теги от LLM) → `models/schemas.py` (валидация) → `services/supabase_client.py` (сохранение + теги)
+2. **Фото** → `handlers/photo.py` → `utils/qr_decoder.py` (ищем QR) → если QR найден: `services/receipt_qr.py` (proverkacheka) + `categorize_items` (с тегами) → если нет: `services/receipt_photo.py` (Vision LLM) + `categorize_items` → сохранение + теги
+3. **Отчёт** → `handlers/reports.py` → обычный: `get_transactions` + `get_category_breakdown` → по тегу: `get_transactions_by_tag` + `get_category_breakdown_by_tag` → `services/llm.py` (форматирование)
 4. **Редактирование** → `handlers/message.py` (intent="edit") → `handlers/edit.py` (inline-кнопки) → callback → `services/supabase_client.py` (удаление/обновление)
+5. **Теги** → кнопка "🏷 Добавить тег" после сохранения → FSM `TagStates.waiting_for_tags` → `add_tags_to_transaction`
 
 ## Что сделано
 
@@ -93,11 +97,12 @@ fin_assist/
 - [x] Разбивка отчёта по позициям чека (`get_category_breakdown`)
 - [x] Категоризация позиций для Vision LLM (фото без QR)
 - [x] Два магазина с одним именем и разными адресами — разные записи
+- [x] Система хештегов: теги на транзакции, позиции и магазины; парсинг из текста (#тег) и от LLM; наследование тегов магазина; фильтрация в отчётах
 
 ## Дальнейшие планы (TODO)
 
 ### Ближайшие
-- [ ] Пользовательские псевдонимы магазинов через диалог (например, "магазин у дома" → Народный)
+- [ ] Постоянные теги магазинов через диалог (команда `/store_tag`)
 - [ ] Бюджеты и лимиты по категориям с уведомлениями
 - [ ] Отчёт за произвольный период (не только текущий месяц)
 - [ ] Скрипт / systemd-сервис для автозапуска бота

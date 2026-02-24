@@ -1,7 +1,7 @@
 import logging
 
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from services.llm import parse_user_message
 from services.supabase_client import get_or_create_user, save_transaction
@@ -25,11 +25,15 @@ def _format_confirmation(parsed: dict) -> str:
         lines = [f"  • {it['name']} — {it['total']} ₽" for it in parsed["items"]]
         items_text = "\n" + "\n".join(lines)
 
+    tags = parsed.get("tags") or []
+    tags_text = "\nТеги: " + " ".join(f"#{t}" for t in tags) if tags else ""
+
     return (
         f"{type_emoji} <b>{type_text} записан</b>\n"
         f"Сумма: <b>{parsed['amount']} ₽</b>\n"
         f"Категория: {category}{store_text}\n"
         f"Дата: {date}"
+        f"{tags_text}"
         f"{items_text}"
     )
 
@@ -73,12 +77,16 @@ async def handle_text_message(message: Message):
             "raw_input": message.text,
             "llm_raw": parsed.model_dump(),
             "items": [item.model_dump() for item in parsed.items],
+            "tags": parsed.tags,
         }
 
         try:
             tx = save_transaction(user.id, tx_data)
             confirmation = _format_confirmation(tx_data)
-            await message.answer(confirmation, parse_mode="HTML")
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🏷 Добавить тег", callback_data=f"tag_add:{tx['id']}"),
+            ]])
+            await message.answer(confirmation, parse_mode="HTML", reply_markup=keyboard)
         except Exception as e:
             logger.error(f"Ошибка сохранения: {e}")
             await message.answer("Ошибка при сохранении записи. Попробуй ещё раз.")

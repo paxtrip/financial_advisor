@@ -8,6 +8,7 @@ class TransactionItem(BaseModel):
     price: float
     total: float
     category: Optional[str] = None
+    tags: list[str] = []
 
 
 class ParsedExpense(BaseModel):
@@ -21,6 +22,7 @@ class ParsedExpense(BaseModel):
     date: Optional[str] = None
     time: Optional[str] = None
     items: list[TransactionItem] = []
+    tags: list[str] = []
     confidence: float = 0.0
     clarification_needed: Optional[str] = None
 
@@ -32,6 +34,7 @@ class ParsedReceipt(BaseModel):
     time: Optional[str] = None
     total: float
     items: list[TransactionItem] = []
+    tags: list[str] = []
     payment_method: Optional[str] = None
     warnings: list[str] = []
     error: Optional[str] = None
@@ -43,6 +46,7 @@ class ReportRequest(BaseModel):
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     category_filter: Optional[str] = None
+    tag_filter: Optional[str] = None
     report_type: str = "summary"
 
 

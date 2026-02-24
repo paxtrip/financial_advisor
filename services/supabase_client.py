@@ -1,6 +1,7 @@
 from supabase import create_client, Client
 
 from config import settings
+from utils.tag_parser import normalize_tags
 
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
@@ -152,8 +153,31 @@ def save_transaction(user_id: int, data: dict) -> dict:
 
     tx_id = tx.data[0]["id"]
 
+    # Собираем теги: из данных + постоянные теги магазина
+    tx_tag_names: list[str] = list(data.get("tags") or [])
+    if store_id:
+        store_tag_ids = get_store_tags(store_id)
+        # Получаем имена тегов магазина чтобы смержить без дублей
+        if store_tag_ids:
+            store_tags_rows = (
+                supabase.table("tags")
+                .select("name")
+                .in_("id", store_tag_ids)
+                .execute()
+            ).data
+            for row in store_tags_rows:
+                if row["name"] not in tx_tag_names:
+                    tx_tag_names.append(row["name"])
+
+    if tx_tag_names:
+        tx_tag_ids = _resolve_tag_ids(user_id, tx_tag_names)
+        supabase.table("transaction_tags").insert(
+            [{"transaction_id": tx_id, "tag_id": tid} for tid in tx_tag_ids]
+        ).execute()
+
     if data.get("items"):
-        items = []
+        items_to_insert = []
+
         for item in data["items"]:
             item_data = {
                 "transaction_id": tx_id,
@@ -166,8 +190,17 @@ def save_transaction(user_id: int, data: dict) -> dict:
                 item_cat = find_category_by_name(user_id, item["category"])
                 if item_cat:
                     item_data["category_id"] = item_cat["id"]
-            items.append(item_data)
-        supabase.table("transaction_items").insert(items).execute()
+            items_to_insert.append((item_data, item.get("tags") or []))
+
+        # Вставляем позиции и сохраняем теги позиций
+        for item_data, item_tags in items_to_insert:
+            inserted = supabase.table("transaction_items").insert(item_data).execute()
+            item_id = inserted.data[0]["id"]
+            if item_tags:
+                item_tag_ids = _resolve_tag_ids(user_id, item_tags)
+                supabase.table("transaction_item_tags").insert(
+                    [{"transaction_item_id": item_id, "tag_id": tid} for tid in item_tag_ids]
+                ).execute()
 
     return tx.data[0]
 
@@ -238,6 +271,75 @@ def get_category_breakdown(user_id: int, date_from: str, date_to: str) -> list[d
     )
 
 
+def add_tags_to_transaction(transaction_id: int, user_id: int, tags: list[str]) -> list[str]:
+    """Добавляет теги к транзакции. Возвращает список сохранённых тегов (без дублей)."""
+    saved = []
+    for tag in normalize_tags(tags):
+        tag_id = get_or_create_tag(user_id, tag)
+        existing = (
+            supabase.table("transaction_tags")
+            .select("tag_id")
+            .eq("transaction_id", transaction_id)
+            .eq("tag_id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            supabase.table("transaction_tags").insert(
+                {"transaction_id": transaction_id, "tag_id": tag_id}
+            ).execute()
+            saved.append(tag)
+    return saved
+
+
+def get_or_create_tag(user_id: int, name: str) -> int:
+    """Находит тег по имени или создаёт новый. Возвращает tag_id."""
+    normalized = name.lstrip("#").lower().strip()
+    result = (
+        supabase.table("tags")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("name", normalized)
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]["id"]
+    new_tag = supabase.table("tags").insert({"user_id": user_id, "name": normalized}).execute()
+    return new_tag.data[0]["id"]
+
+
+def _resolve_tag_ids(user_id: int, tags: list[str]) -> list[int]:
+    """Преобразует список имён тегов в список tag_id."""
+    return [get_or_create_tag(user_id, t) for t in tags if t.strip()]
+
+
+def get_store_tags(store_id: int) -> list[int]:
+    """Возвращает список tag_id постоянных тегов магазина."""
+    result = (
+        supabase.table("store_tags")
+        .select("tag_id")
+        .eq("store_id", store_id)
+        .execute()
+    )
+    return [row["tag_id"] for row in result.data]
+
+
+def save_store_tags(store_id: int, user_id: int, tags: list[str]) -> None:
+    """Добавляет постоянные теги магазину (без дублей)."""
+    tag_ids = _resolve_tag_ids(user_id, tags)
+    if not tag_ids:
+        return
+    existing = get_store_tags(store_id)
+    new_rows = [
+        {"store_id": store_id, "tag_id": tid}
+        for tid in tag_ids
+        if tid not in existing
+    ]
+    if new_rows:
+        supabase.table("store_tags").insert(new_rows).execute()
+
+
 def get_last_transactions(user_id: int, limit: int = 5) -> list[dict]:
     """Получает последние N транзакций."""
     result = (
@@ -278,3 +380,94 @@ def update_transaction(transaction_id: int, user_id: int, updates: dict) -> dict
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def get_user_tags(user_id: int) -> list[dict]:
+    """Возвращает все теги пользователя, отсортированные по имени."""
+    result = (
+        supabase.table("tags")
+        .select("id, name")
+        .eq("user_id", user_id)
+        .order("name")
+        .execute()
+    )
+    return result.data
+
+
+def get_transactions_by_tag(
+    user_id: int, tag_name: str, date_from: str, date_to: str
+) -> list[dict]:
+    """Возвращает транзакции за период, помеченные указанным тегом."""
+    normalized = tag_name.lstrip("#").lower().strip()
+
+    tag_result = (
+        supabase.table("tags")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("name", normalized)
+        .limit(1)
+        .execute()
+    )
+    if not tag_result.data:
+        return []
+    tag_id = tag_result.data[0]["id"]
+
+    link_result = (
+        supabase.table("transaction_tags")
+        .select("transaction_id")
+        .eq("tag_id", tag_id)
+        .execute()
+    )
+    if not link_result.data:
+        return []
+    tx_ids = [row["transaction_id"] for row in link_result.data]
+
+    result = (
+        supabase.table("transactions")
+        .select("*, categories(name), stores(name)")
+        .eq("user_id", user_id)
+        .in_("id", tx_ids)
+        .gte("receipt_date", date_from)
+        .lte("receipt_date", date_to)
+        .order("receipt_date", desc=True)
+        .execute()
+    )
+    return result.data
+
+
+def get_category_breakdown_by_tag(
+    user_id: int, tag_name: str, date_from: str, date_to: str
+) -> list[dict]:
+    """Разбивка по категориям для транзакций с указанным тегом."""
+    txs = get_transactions_by_tag(user_id, tag_name, date_from, date_to)
+    expense_txs = [t for t in txs if t["type"] == "expense"]
+    if not expense_txs:
+        return []
+
+    tx_ids = [tx["id"] for tx in expense_txs]
+    items = (
+        supabase.table("transaction_items")
+        .select("transaction_id, total, category_id, categories(name)")
+        .in_("transaction_id", tx_ids)
+        .execute()
+    ).data
+
+    tx_ids_with_items = {item["transaction_id"] for item in items}
+    totals: dict[str, float] = {}
+
+    for item in items:
+        cat = item.get("categories")
+        name = cat["name"] if cat else "Другое"
+        totals[name] = totals.get(name, 0) + float(item["total"])
+
+    for tx in expense_txs:
+        if tx["id"] not in tx_ids_with_items:
+            cat = tx.get("categories")
+            name = cat["name"] if cat else "Другое"
+            totals[name] = totals.get(name, 0) + float(tx["amount"])
+
+    return sorted(
+        [{"category": k, "total": round(v, 2)} for k, v in totals.items()],
+        key=lambda x: x["total"],
+        reverse=True,
+    )

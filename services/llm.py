@@ -12,6 +12,7 @@ from prompts.system_prompts import (
     CATEGORIZE_ITEMS_PROMPT,
     REPORT_PROMPT,
 )
+from utils.tag_parser import extract_tags_from_text, merge_tags
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +66,22 @@ async def parse_user_message(text: str) -> tuple[ParsedExpense, dict]:
     current_date = date.today().isoformat()
     prompt = PARSE_MESSAGE_PROMPT.format(current_date=current_date)
 
+    # Извлекаем #теги из текста до отправки в LLM
+    clean_text, text_tags = extract_tags_from_text(text)
+
     messages = [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": text},
+        {"role": "user", "content": clean_text},
     ]
 
     raw = await call_llm(messages, response_format={"type": "json_object"})
     data = _parse_json_response(raw)
-    return ParsedExpense.model_validate(data), data
+    parsed = ParsedExpense.model_validate(data)
+
+    # Мержим теги из текста с тегами от LLM
+    parsed.tags = merge_tags(text_tags, parsed.tags)
+
+    return parsed, data
 
 
 async def parse_receipt_photo(base64_image: str) -> ParsedReceipt:

@@ -3,7 +3,7 @@ import logging
 from collections import Counter
 
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from services.llm import categorize_items
 from services.receipt_qr import fetch_receipt_by_qr
@@ -145,12 +145,16 @@ async def handle_photo(message: Message):
         "llm_raw": receipt_data,
         "items": receipt_data.get("items", []),
         "qr_raw": qr_data,
+        "tags": receipt_data.get("tags") or [],
     }
 
     try:
-        save_transaction(user.id, tx_data)
+        tx = save_transaction(user.id, tx_data)
         confirmation = _format_receipt_confirmation(receipt_data)
-        await message.answer(confirmation, parse_mode="HTML")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🏷 Добавить тег", callback_data=f"tag_add:{tx['id']}"),
+        ]])
+        await message.answer(confirmation, parse_mode="HTML", reply_markup=keyboard)
     except Exception as e:
         logger.error(f"Ошибка сохранения чека: {e}")
         await message.answer("Ошибка при сохранении чека. Попробуй ещё раз.")

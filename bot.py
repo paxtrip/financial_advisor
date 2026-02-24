@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
 from handlers import start, photo, reports, edit, message
@@ -12,7 +13,7 @@ logging.basicConfig(
 )
 
 bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
 # Регистрация обработчиков (порядок важен: команды и фото до общего текстового)
 dp.include_router(start.router)
